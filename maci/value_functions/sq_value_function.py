@@ -59,8 +59,8 @@ class NNQFunction(MLPFunction):
         Serializable.quick_init(self, locals())
         self._name = name + '_agent_{}'.format(agent_id)
         if env_spec is None:
-            self._observation_dim = observation_space.flat_dim
-            self._action_dim = env_spec.action_space.flat_dim
+            self._observation_dim = observation_space
+            self._action_dim = action_space
         elif isinstance(env_spec, MAEnvSpec):
             assert agent_id is not None
             self._observation_dim = env_spec.observation_space[agent_id].flat_dim
@@ -190,3 +190,93 @@ class SumQFunction(Serializable):
 
         for values, qf in zip(all_values_list, self.q_functions):
             qf.set_param_values(values)
+        
+class JNNQFunction(MLPFunction):
+    def __init__(self, env_spec=None,
+                 observation_space=None,
+                 action_space=None,
+                 hidden_layer_sizes=(100, 100),
+                 name='q_function',
+                 joint=False, agent_id=None, maddpg=False):
+        Serializable.quick_init(self, locals())
+        self._name = name + '_agent_{}'.format(agent_id)
+        if env_spec is None:
+            self._observation_dim = observation_space.flat_dim
+            self._action_dim = env_spec.action_space.flat_dim
+        elif isinstance(env_spec, MAEnvSpec):
+            assert agent_id is not None
+            self._observation_dim = env_spec.observation_space[agent_id].flat_dim
+            if maddpg:
+                self._observation_dim = env_spec.observation_space.flat_dim
+            if joint:
+                self._action_dim = env_spec.action_space.flat_dim
+            else:
+                self._action_dim = env_spec.action_space[agent_id].flat_dim
+        else:
+            self._action_dim = env_spec.action_space.flat_dim
+            self._observation_dim = env_spec.observation_space.flat_dim
+            if maddpg:
+                self._observation_dim = env_spec.observation_space.flat_dim
+
+        self._observations_ph = tf.placeholder(
+            tf.float32, shape=[None, self._observation_dim**2], name='observations_agent_{}'.format(agent_id))
+        self._actions_ph = tf.placeholder(
+            tf.float32, shape=[None, self._action_dim], name='actions_agent_{}'.format(agent_id))
+
+        super(JNNQFunction, self).__init__(
+            inputs=(self._observations_ph, self._actions_ph),
+            name=self._name,
+            hidden_layer_sizes=hidden_layer_sizes)
+
+    def output_for(self, observations, actions, reuse=False):
+        return super(JNNQFunction, self)._output_for(
+            (observations, actions), reuse=reuse)
+
+    def eval(self, observations, actions):
+        return super(JNNQFunction, self)._eval((observations, actions))
+
+class SCondNNQFunction(MLPFunction):
+    def __init__(self, env_spec=None,
+                 observation_space=None,
+                 action_space=None,
+                 hidden_layer_sizes=(100, 100),
+                 name='q_function',
+                 joint=False, agent_id=None, maddpg=False):
+        Serializable.quick_init(self, locals())
+        self._name = name + '_agent_{}'.format(agent_id)
+        if env_spec is None:
+            self._observation_dim = observation_space
+            self._action_dim = action_space
+        elif isinstance(env_spec, MAEnvSpec):
+            assert agent_id is not None
+            self._observation_dim = env_spec.observation_space[agent_id].flat_dim* (agent_id+1)
+            self._action_dim = env_spec.action_space[agent_id] * (agent_id+1)
+
+            # if maddpg:
+            #     self._observation_dim = env_spec.observation_space.flat_dim
+            # if joint:
+            #     self._action_dim = env_spec.action_space.flat_dim
+            # else:
+            #     self._action_dim = env_spec.action_space[agent_id].flat_dim
+        else:
+            self._action_dim = env_spec.action_space.flat_dim
+            self._observation_dim = env_spec.observation_space.flat_dim
+            if maddpg:
+                self._observation_dim = env_spec.observation_space.flat_dim
+
+        self._observations_ph = tf.placeholder(
+            tf.float32, shape=[None, self._observation_dim], name='observations_agent_{}'.format(agent_id))
+        self._actions_ph = tf.placeholder(
+            tf.float32, shape=[None, self._action_dim], name='actions_agent_{}'.format(agent_id))
+
+        super(SCondNNQFunction, self).__init__(
+            inputs=(self._observations_ph, self._actions_ph),
+            name=self._name,
+            hidden_layer_sizes=hidden_layer_sizes)
+
+    def output_for(self, observations, actions, reuse=False):
+        return super(SCondNNQFunction, self)._output_for(
+            (observations, actions), reuse=reuse)
+
+    def eval(self, observations, actions):
+        return super(SCondNNQFunction, self)._eval((observations, actions))

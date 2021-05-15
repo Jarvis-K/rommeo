@@ -1,0 +1,8 @@
+cmd: python experiment/res_gpf.py
+hparams:
+  model_names_setting: [GPF]
+  s2: [3.0]
+  max_steps: [5000]
+  lr: [0.005]
+  alpha: [10]
+  n_pars: [48, 48, 48, 64, 64, 64] 

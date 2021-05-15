@@ -14,12 +14,18 @@ from maci.get_agents import ddpg_agent, masql_agent, pr2ac_agent, rom_agent
 import maci.misc.tf_utils as U
 import os
 
-from keras.backend.tensorflow_backend import set_session
+import optuna
+from optuna.trial import TrialState
+from optuna.visualization import plot_contour
+from optuna.visualization import plot_edf
+from optuna.visualization import plot_intermediate_values
+from optuna.visualization import plot_optimization_history
+from optuna.visualization import plot_parallel_coordinate
+from optuna.visualization import plot_param_importances
+from optuna.visualization import plot_slice
+from keras.backend.tensorflow_backend import set_session, clear_session
 import tensorflow as tf
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
-sess = tf.Session(config=config)
-set_session(sess)
+
 
 
 def get_particle_game(particle_game_name, arglist):
@@ -36,29 +42,13 @@ def get_particle_game(particle_game_name, arglist):
     model_names = [model_names_setting[1]] * adv_agent_num + [model_names_setting[0]] * (agent_num - adv_agent_num)
     return env, agent_num, model_name, model_names
 
-def parse_args():
-    parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
-    # Environment
-    # ['particle-simple_spread', 'particle-simple_adversary', 'particle-simple_tag', 'particle-simple_push']
-    parser.add_argument('-g', "--game_name", type=str, default="diff-ma_softq", help="name of the game")
-    parser.add_argument('-p', "--p", type=float, default=1.1, help="p")
-    parser.add_argument('-mu', "--mu", type=float, default=1.5, help="mu")
-    parser.add_argument('-r', "--reward_type", type=str, default="abs", help="reward type")
-    parser.add_argument('-mp', "--max_path_length", type=int, default=1, help="reward type")
-    parser.add_argument('-ms', "--max_steps", type=int, default=10000, help="reward type")
-    parser.add_argument('-me', "--memory", type=int, default=0, help="reward type")
-    parser.add_argument('-n', "--n", type=int, default=2, help="name of the game")
-    parser.add_argument('-bs', "--batch_size", type=int, default=512, help="name of the game")
-    parser.add_argument('-hm', "--hidden_size", type=int, default=100, help="name of the game")
-    parser.add_argument('-ti', "--training_interval", type=int, default=1, help="name of the game")
-    parser.add_argument('-re', "--repeat", type=bool, default=False, help="name of the game")
-    parser.add_argument('-a', "--aux", type=bool, default=True, help="name of the game")
-    parser.add_argument('-gr', "--global_reward", type=bool, default=False, help="name of the game")
-    parser.add_argument('-m', "--model_names_setting", type=str, default='MADDPG_MADDPG', help="models setting agent vs adv")
-    return parser.parse_args()
 
 
-def main(arglist):
+def objective(trail, arglist):
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
+    sess = tf.Session(config=config)
+    set_session(sess)
     game_name = arglist.game_name
     # 'abs', 'one'
     reward_type = arglist.reward_type
@@ -88,7 +78,11 @@ def main(arglist):
     elif 'diff' in game_name:
         diff_game_name = game_name.split('-')[-1]
         agent_num = 2
-        env = DifferentialGame(diff_game_name, agent_num)
+        s2 = trail.suggest_float("s2", 1e-1, 10, log=True)
+        x2 = trail.suggest_float("x2", 1e-1, 10, log=True)
+        y2 = trail.suggest_float("y2", 1e-1, 10, log=True)
+        con = trail.suggest_float("c", 1e-1, 50, log=True)
+        env = DifferentialGame(diff_game_name, agent_num, x2, y2, s2, con)
 
     elif 'particle' in game_name:
         particle_game_name = game_name.split('-')[-1]
@@ -115,9 +109,9 @@ def main(arglist):
     agents = []
     M = arglist.hidden_size
     batch_size = arglist.batch_size
-
     sampler = MASampler(agent_num=agent_num, joint=True, global_reward=arglist.global_reward, max_path_length=25, min_pool_size=100, batch_size=batch_size)
 
+    result = 0
     base_kwargs = {
         'sampler': sampler,
         'epoch_length': 1,
@@ -163,7 +157,8 @@ def main(arglist):
         gt.set_def_unique(False)
         initial_exploration_done = False
         # noise = .1
-        noise = .5
+        noise = 1.
+        # alpha = .1
         alpha = .1
 
 
@@ -174,20 +169,16 @@ def main(arglist):
                 pass
         # alpha = .5
         for steps in gt.timed_for(range(base_kwargs['n_epochs'] + 1)):
-            # import pdb; pdb.set_trace()
+            # if steps < 500:
             alpha = .1 + np.exp(-0.1 * max(steps-10, 0)) * 500.
-            # if steps > 100 and steps<150: 
-            #     alpha = .1 - 0.099 * steps/(150)
-            # elif steps >= 150:
-            #     alpha = 1e-3
-            print('alpha', alpha)
+            # else:
+            #     alpha = .1 + np.exp(-0.1 * max(1000 - 10, 0)) * 500.
             logger.push_prefix('Epoch #%d | ' % steps)
             if steps % (25*1000) == 0:
                 print(suffix)
             for t in range(base_kwargs['epoch_length']):
                 # TODO.code consolidation: Add control interval to sampler
                 if not initial_exploration_done:
-                    # if steps >= 1000:
                     if steps >= 10:
                         initial_exploration_done = True
                 sampler.sample()
@@ -195,7 +186,7 @@ def main(arglist):
                     continue
                 gt.stamp('sample')
                 print('Sample Done')
-                if steps == 10000:
+                if steps == base_kwargs['n_epochs']:
                     noise = 0.1
 
                     for agent in agents:
@@ -204,7 +195,6 @@ def main(arglist):
                         except:
                             pass
                     # alpha = 10.
-                # if steps == 2000:
                 if steps > base_kwargs['n_epochs'] / 10:
                     noise = 0.1
                     for agent in agents:
@@ -275,6 +265,10 @@ def main(arglist):
 
 
                     current_actions = [agents[i].policy.get_actions(batch_n[i]['next_observations'])[0][0] for i in range(agent_num)]
+                    current_mus = [agents[i].policy.get_mu(batch_n[i]['next_observations'])[0][0] for i in
+                                       range(agent_num)]
+                    current_opponent_mus = [agents[i].opponent_policy.get_mu(batch_n[i]['next_observations'])[0][0] for i in
+                                       range(agent_num)]
                     all_actions_k = []
                     for i, agent in enumerate(agents):
                         if isinstance(agent, MAVBAC):
@@ -287,6 +281,10 @@ def main(arglist):
                             f.write(','.join(list(map(str, all_actions_k))) + '\n')
                     with open('{}/policy.csv'.format(policy_dir), 'a') as f:
                         f.write(','.join(list(map(str, current_actions)))+'\n')
+                    with open('{}/mus.csv'.format(policy_dir), 'a') as f:
+                        f.write(','.join(list(map(str, current_mus)))+'\n')
+                    with open('{}/opponent_mus.csv'.format(policy_dir), 'a') as f:
+                        f.write(','.join(list(map(str, current_opponent_mus)))+'\n')
                     # print('============')
                     for i, agent in enumerate(agents):
                         try:
@@ -301,16 +299,54 @@ def main(arglist):
                                 batch_n[i]['opponent_next_actions'] = agent.opponent_policy.get_actions(batch_n[i]['next_observations'])
                             else:
                                 batch_n[i]['opponent_next_actions'] = np.reshape(np.delete(deepcopy(target_next_actions_n), i, 0), (-1, agent._opponent_action_dim))
-
                         if isinstance(agent, MAVBAC) or isinstance(agent, MASQL) or isinstance(agent, ROMMEO):
                             agent._do_training(iteration=t + steps * agent._epoch_length, batch=batch_n[i], annealing=alpha)
                         else:
                             agent._do_training(iteration=t + steps * agent._epoch_length, batch=batch_n[i])
                 gt.stamp('train')
-            sampler.terminate()
+            result = sampler.terminate()
+            result -= con
+    clear_session()
+    return result
 
 
 
 if __name__ == '__main__':
-    arglist = parse_args()
-    main(arglist)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-g', "--game_name", type=str, default="diff-ma_softq", help="name of the game")
+
+    parser.add_argument('--n_samples', type=int, required=False, default=20)
+    parser.add_argument('-alp', '--alpha', type=float, required=False, default=1e-3)
+
+    # Differential game settings
+    
+
+    parser.add_argument('-p', "--p", type=float, default=1.1, help="p")
+    parser.add_argument('-mu', "--mu", type=float, default=1.5, help="mu")
+    parser.add_argument('-r', "--reward_type", type=str, default="abs", help="reward type")
+    parser.add_argument('-mp', "--max_path_length", type=int, default=1, help="reward type")
+    parser.add_argument('-ms', "--max_steps", type=int, default=500, help="reward type")
+    parser.add_argument('-me', "--memory", type=int, default=0, help="reward type")
+    parser.add_argument('-n', "--n", type=int, default=2, help="name of the game")
+    parser.add_argument('-bs', "--batch_size", type=int, default=512, help="name of the game")
+    parser.add_argument('-hm', "--hidden_size", type=int, default=100, help="name of the game")
+    parser.add_argument('-ti', "--training_interval", type=int, default=1, help="name of the game")
+    parser.add_argument('-re', "--repeat", type=bool, default=False, help="name of the game")
+    parser.add_argument('-a', "--aux", type=bool, default=True, help="name of the game")
+    parser.add_argument('-gr', "--global_reward", type=bool, default=False, help="name of the game")
+    parser.add_argument('-m', "--model_names_setting", type=str, default='ROMMEO_ROMMEO', help="models setting agent vs adv")
+    arglist = parser.parse_args()
+    study_name = '2Diff'
+    storage_name = "mysql://jjs@localhost/{}".format('diff')
+    study = optuna.create_study(study_name=study_name, storage=storage_name, directions=["minimize"], load_if_exists=True)
+    # study = optuna.create_study(study_name=study_name, directions=["minimize", "minimize"])
+    study.optimize(lambda trial: objective(trial, arglist), n_trials=50)
+
+    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
+
+    print("Study statistics: ")
+    print("Number of finished trials: ", len(study.trials))
+    print("Number of complete trials: ", len(complete_trials))
+
+    print("Best trial:")
+    trial = study.best_trials

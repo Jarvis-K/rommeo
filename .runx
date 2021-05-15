@@ -1,0 +1,9 @@
+LOGROOT: /mnt/data1/jjs/Diff-logs
+
+FARM: bigfarm
+bigfarm:
+    SUBMIT_CMD: ' '
+    RESOURCES:
+        gpu: 2
+        cpu: 16
+        mem: 128

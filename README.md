@@ -24,13 +24,14 @@ sudo pip3 install -e .
  2. Intsall other dependencies
    
  ```shell
-sudo pip3 install joblib,path.py,gtimer,theano,keras,tensorflow,gym, tensorflow_probability
+sudo pip3 install joblib path.py gtimer theano keras tensorflow gym  tensorflow_probability
  ```
 
  3. Intsall maci
    
  ```shell
-cd maci
+cd rommeo
+pip3 install mujoco-py
 sudo pip3 install -e .
  ```
 

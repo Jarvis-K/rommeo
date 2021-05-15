@@ -1,3 +1,5 @@
+-e git+https://github.com.cnpmjs.org/rlworkgroup/garage.git@56cc4a65d956a5c51c73005066dcc04f3ed1b003#egg=rlgarage
+-e git+https://github.com.cnpmjs.org/openai/spinningup.git@f67828a41e98053355e9c491dfd1de99699aa173#egg=spinup
 absl-py==0.5.0
 alembic==1.0.5
 aniso8601==4.0.1
@@ -107,16 +109,13 @@ lockfile==0.12.2
 lz4==2.1.6
 Mako==1.0.7
 Markdown==3.0.1
-MarkupSafe==1.0
 marshmallow==2.16.3
 matplotlib==3.0.0
 mccabe==0.6.1
 mistune==0.8.4
 more-itertools==4.3.0
 mpi4py==3.0.0
-mujoco-py==1.50.1.68
--e git+https://github.com/openai/multiagent-particle-envs.git@6ed7cac026f0eb345d4c20232bafa1dc951c68e7#egg=multiagent
-multiworld==0.0.0
+-e git+https://github.com.cnpmjs.org/openai/multiagent-particle-envs.git@6ed7cac026f0eb345d4c20232bafa1dc951c68e7#egg=multiagent
 nbconvert==5.4.0
 nbformat==4.4.0
 networkx==2.2
@@ -174,8 +173,8 @@ qtconsole==4.4.2
 ray==0.6.1
 redis==3.0.1
 requests==2.20.0
--e git+https://github.com/rlworkgroup/garage.git@56cc4a65d956a5c51c73005066dcc04f3ed1b003#egg=rlgarage
--e git+https://github.com/rll/rllab.git@b3a28992eca103cab3cb58363dd7a4bb07f250a0#egg=rllab
+
+-e git+https://github.com.cnpmjs.org/rll/rllab.git@b3a28992eca103cab3cb58363dd7a4bb07f250a0#egg=rllab
 rsa==3.4.2
 ruamel.yaml==0.15.46
 s3transfer==0.1.13
@@ -193,12 +192,11 @@ sklearn==0.0
 smmap2==2.0.5
 snowballstemmer==1.2.1
 soupsieve==1.6.2
--e git+https://github.com/openai/spinningup.git@f67828a41e98053355e9c491dfd1de99699aa173#egg=spinup
 SQLAlchemy==1.2.11
 statsmodels==0.9.0
 tensorboard==1.12.0
-tensorflow==1.12.0
-tensorflow-probability==0.5.0
+tensorflow==1.15.0
+tensorflow-probability==0.7.0
 termcolor==1.1.0
 terminado==0.8.1
 testfixtures==6.4.1

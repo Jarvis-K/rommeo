@@ -211,6 +211,7 @@ class ROMMEO(MARLAlgorithm):
         opponent_actions, opponent_actions_log_pis, reg_loss = self.opponent_policy.actions_for(
             observations=self._observations_ph,
             reuse=tf.AUTO_REUSE, with_log_pis=True, return_reg=True)
+        # import pdb; pdb.set_trac(
         assert_shape(opponent_actions, [None, self._opponent_action_dim])
 
         prior = self._get_opponent_prior(self._observations_ph)

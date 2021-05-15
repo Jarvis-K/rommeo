@@ -1,0 +1,9 @@
+cmd: python experiment/res_gpf.py
+hparams:
+  model_names_setting: [ACCF]
+  s2: [1.5]
+  max_steps: [5000]
+  nego_round: [1]
+  lr: [0.005]
+  alpha: [10]
+  n_pars: [2, 8, 16, 32] 

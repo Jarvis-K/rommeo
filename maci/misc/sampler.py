@@ -3,7 +3,8 @@ import time
 
 from maci.misc import logger
 from copy import deepcopy
-
+from easy_tf_log import tflog
+import pickle 
 
 def rollout(env, policy, path_length, render=False, speedup=None):
     Da = env.action_space.flat_dim
@@ -98,8 +99,8 @@ class Sampler(object):
     def terminate(self):
         self.env.terminate()
 
-    def log_diagnostics(self):
-        logger.record_tabular('pool-size', self.pool.size)
+    # def log_diagnostics(self):
+    #     logger.record_tabular('pool-size', self.pool.size)
 
 
 class SimpleSampler(Sampler):
@@ -145,22 +146,23 @@ class SimpleSampler(Sampler):
         else:
             self._current_observation = next_observation
 
-    def log_diagnostics(self):
-        super(SimpleSampler, self).log_diagnostics()
-        logger.record_tabular('max-path-return', self._max_path_return)
-        logger.record_tabular('last-path-return', self._last_path_return)
-        logger.record_tabular('episodes', self._n_episodes)
-        logger.record_tabular('total-samples', self._total_samples)
+    # def log_diagnostics(self):
+    #     super(SimpleSampler, self).log_diagnostics()
+    #     logger.record_tabular('max-path-return', self._max_path_return)
+    #     logger.record_tabular('last-path-return', self._last_path_return)
+    #     logger.record_tabular('episodes', self._n_episodes)
+    #     logger.record_tabular('total-samples', self._total_samples)
 
 
 class MASampler(SimpleSampler):
-    def __init__(self, agent_num, joint, global_reward=False, **kwargs):
+    def __init__(self, agent_num, joint, global_reward=False, logger_name='base', **kwargs):
         super(SimpleSampler, self).__init__(**kwargs)
         self.agent_num = agent_num
         self.joint = joint
         self.global_reward = global_reward
         self._path_length = 0
         self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+        self._mean_path_return = np.array([0.] * self.agent_num, dtype=np.float32)
         self._last_path_return = np.array([0.] * self.agent_num, dtype=np.float32)
         self._max_path_return = np.array([-np.inf] * self.agent_num, dtype=np.float32)
         self._n_episodes = 0
@@ -193,6 +195,7 @@ class MASampler(SimpleSampler):
         if self._current_observation_n is None:
             self._current_observation_n = self.env.reset()
         action_n = []
+
         for agent, current_observation in zip(self.agents, self._current_observation_n):
             action, _ = agent.policy.get_action(current_observation)
             # print(action)
@@ -201,9 +204,13 @@ class MASampler(SimpleSampler):
             else:
                 action_n.append(np.array(action))
 
-        action_n = np.asarray(action_n)
-
-        next_observation_n, reward_n, done_n, info = self.env.step(action_n)
+        try:
+            action_n = np.asarray(action_n)
+            # action_n = .5 * np.ones_like(action_n)
+            next_observation_n, reward_n, done_n, info = self.env.step(action_n)
+            print(reward_n)
+        except:
+            import pdb; pdb.set_trace()
         if self.global_reward:
             reward_n = np.array([np.sum(reward_n)] * self.agent_num)
 
@@ -249,20 +256,140 @@ class MASampler(SimpleSampler):
 
             self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
             self._n_episodes += 1
-            self.log_diagnostics()
-            logger.dump_tabular(with_prefix=False)
+            tflog('mean-return', self._mean_path_return[0])
+            # self.log_diagnostics()
+            # logger.dump_tabular(with_prefix=False)
 
         else:
             self._current_observation_n = next_observation_n
 
-    def log_diagnostics(self):
-        for i in range(self.agent_num):
-            logger.record_tabular('max-path-return_agent_{}'.format(i), self._max_path_return[i])
-            logger.record_tabular('mean-path-return_agent_{}'.format(i), self._mean_path_return[i])
-            logger.record_tabular('last-path-return_agent_{}'.format(i), self._last_path_return[i])
-        logger.record_tabular('episodes', self._n_episodes)
-        logger.record_tabular('episode_reward', self._n_episodes)
-        logger.record_tabular('total-samples', self._total_samples)
+    def terminate(self):
+        self.env.terminate()
+        return self._mean_path_return[0]
+        # return self._max_path_return[0]
+
+    # def log_diagnostics(self):
+    #     for i in range(self.agent_num):
+    #         logger.record_tabular('max-path-return_agent_{}'.format(i), self._max_path_return[i])
+    #         logger.record_tabular('mean-path-return_agent_{}'.format(i), self._mean_path_return[i])
+    #         logger.record_tabular('last-path-return_agent_{}'.format(i), self._last_path_return[i])
+    #     logger.record_tabular('episodes', self._n_episodes)
+    #     logger.record_tabular('episode_reward', self._n_episodes)
+    #     logger.record_tabular('total-samples', self._total_samples)
+
+class JSampler(SimpleSampler):
+    def __init__(self, agent_num, joint, global_reward=False, do_nego=1, **kwargs):
+        super(SimpleSampler, self).__init__(**kwargs)
+        self.agent_num = agent_num
+        self.joint = joint
+        self.global_reward = global_reward
+        self._path_length = 0
+        self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+        self._last_path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+        self._max_path_return = np.array([-np.inf] * self.agent_num, dtype=np.float32)
+        self._n_episodes = 0
+        self._total_samples = 0
+        self.episode_rewards = [0.0]  # sum of rewards for all agents
+        self.agent_rewards = [[0.0] for _ in range(agent_num)]  # individual agent reward
+        self.step = 0
+        self._current_observation_n = None
+        self.env = None
+        self.agents = None
+        self._do_nego = do_nego
+
+    def set_policy(self, policies):
+        for agent, policy in zip(self.agents, policies):
+            agent.policy = policy
+
+    def batch_ready(self):
+        enough_samples = self.agents[0].pool.size >= self._min_pool_size
+        return enough_samples
+
+    def random_batch(self, i):
+        return self.agents[i].pool.random_batch(self._batch_size)
+
+    def initialize(self, env, agents):
+        self._current_observation_n = None
+        self.env = env
+        self.agents = agents
+
+    def sample(self):
+        self.step += 1
+        if self._current_observation_n is None:
+            self._current_observation_n = self.env.reset()
+
+        action_n = self.agents[0].policy.get_actions(self._current_observation_n)
+        if self._do_nego > 0:
+            action_n = self.agents[0].nego_policy.get_actions(self._current_observation_n, action_n)
+            
+        try:
+            action_n = np.asarray(action_n).reshape(-1)
+            # action_n = .5 * np.ones_like(action_n)
+            next_observation_n, reward_n, done_n, info = self.env.step(action_n)
+            print(reward_n)
+        except:
+            import pdb; pdb.set_trace()
+        if self.global_reward:
+            reward_n = np.array([np.sum(reward_n)] * self.agent_num)
+
+        self._path_length += 1
+        self._path_return += np.array(reward_n, dtype=np.float32)
+        self._total_samples += 1
+
+        for i, agent in enumerate(self.agents):
+            action = deepcopy(action_n[i])
+            if agent.pool.joint:
+                agent.pool.add_sample(observation=self._current_observation_n.reshape(-1),
+                                      action=action.reshape(-1),
+                                      reward=reward_n[i],
+                                      terminal=done_n[i],
+                                      next_observation=next_observation_n.reshape(-1))
+            else:
+                agent.pool.add_sample(observation=self._current_observation_n.reshape(-1),
+                                      action=action.reshape(-1),
+                                      reward=reward_n[i],
+                                      terminal=done_n[i],
+                                      next_observation=next_observation_n.reshape(-1))
+        self._current_observation_n = next_observation_n
+        for i, rew in enumerate(reward_n):
+            self.episode_rewards[-1] += rew
+            self.agent_rewards[i][-1] += rew
+
+        if self.step % (25 * 1000) == 0:
+            print("steps: {}, episodes: {}, mean episode reward: {}".format(
+                        self.step, len(self.episode_rewards), np.mean(self.episode_rewards[-1000:])))
+        if np.all(done_n) or self._path_length >= self._max_path_length:
+            self._current_observation_n = self.env.reset()
+            self._max_path_return = np.maximum(self._max_path_return, self._path_return)
+            self._mean_path_return = self._path_return / self._path_length
+            self._last_path_return = self._path_return
+            self.episode_rewards.append(0)
+            for a in self.agent_rewards:
+                a.append(0)
+            self._path_length = 0
+
+            self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+            self._n_episodes += 1
+            tflog('mean-return', self._mean_path_return[0])
+            # self.log_diagnostics()
+            # logger.dump_tabular(with_prefix=False)
+
+        else:
+            self._current_observation_n = next_observation_n
+
+    def terminate(self):
+        self.env.terminate()
+        return self._mean_path_return[0]
+        # return self._max_path_return[0]
+
+    # def log_diagnostics(self):
+    #     for i in range(self.agent_num):
+    #         logger.record_tabular('max-path-return_agent_{}'.format(i), self._max_path_return[i])
+    #         logger.record_tabular('mean-path-return_agent_{}'.format(i), self._mean_path_return[i])
+    #         logger.record_tabular('last-path-return_agent_{}'.format(i), self._last_path_return[i])
+    #     logger.record_tabular('episodes', self._n_episodes)
+    #     logger.record_tabular('episode_reward', self._n_episodes)
+    #     logger.record_tabular('total-samples', self._total_samples)
 
 
 
@@ -275,3 +402,130 @@ class DummySampler(Sampler):
 
     def sample(self):
         pass
+
+
+class SSampler(SimpleSampler):
+    def __init__(self, agent_num, joint, global_reward=False, **kwargs):
+        super(SimpleSampler, self).__init__(**kwargs)
+        self.agent_num = agent_num
+        self.joint = joint
+        self.global_reward = global_reward
+        self._path_length = 0
+        self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+        self._last_path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+        self._max_path_return = np.array([-np.inf] * self.agent_num, dtype=np.float32)
+        self._n_episodes = 0
+        self._total_samples = 0
+        self.episode_rewards = [0.0]  # sum of rewards for all agents
+        self.agent_rewards = [[0.0] for _ in range(agent_num)]  # individual agent reward
+        self.step = 0
+        self._current_observation_n = None
+        self.env = None
+        self.agents = None
+        self.step_rew_dict = {}
+        self.step_act_dict = {}
+
+    def set_policy(self, policies):
+        for agent, policy in zip(self.agents, policies):
+            agent.policy = policy
+
+    def batch_ready(self):
+        enough_samples = self.agents[0].pool.size >= self._min_pool_size
+        return enough_samples
+
+    def random_batch(self, i):
+        return self.agents[i].pool.random_batch(self._batch_size)
+
+    def initialize(self, env, agents):
+        self._current_observation_n = None
+        self.env = env
+        self.agents = agents
+
+    def sample(self):
+        self.step += 1
+        if self._current_observation_n is None:
+            self._current_observation_n = self.env.reset()
+        action_n = []
+
+        for agent, current_observation in zip(self.agents, self._current_observation_n):
+            action, _ = agent.policy.get_action(self._current_observation_n)
+            # print(action)
+            if agent.joint_policy:
+                action_n.append(np.array(action)[0:agent._action_dim])
+            else:
+                action_n.append(np.array(action))
+
+        try:
+            action_n = np.asarray(action_n)
+            # action_n = .5 * np.ones_like(action_n)
+            next_observation_n, reward_n, done_n, info = self.env.step(action_n)
+            self.step_act_dict[self.step] = action_n
+            self.step_rew_dict[self.step] = reward_n
+            print(reward_n)
+        except:
+            import pdb; pdb.set_trace()
+        if self.global_reward:
+            reward_n = np.array([np.sum(reward_n)] * self.agent_num)
+
+        self._path_length += 1
+        self._path_return += np.array(reward_n[0], dtype=np.float32)
+        self._total_samples += 1
+
+        for i, agent in enumerate(self.agents):
+            action = deepcopy(action_n[i])
+            if agent.pool.joint:
+                # opponent_action = deepcopy(action_n)
+                # opponent_action = np.delete(opponent_action, i, 0)
+                # opponent_action = np.array(opponent_action).flatten()
+                agent.pool.add_sample(observation=self._current_observation_n[i],
+                                      action=action,
+                                      reward=reward_n[i],
+                                      terminal=done_n[i],
+                                      next_observation=next_observation_n[i])
+            else:
+                agent.pool.add_sample(observation=self._current_observation_n[i],
+                                      action=action,
+                                      reward=reward_n[i],
+                                      terminal=done_n[i],
+                                      next_observation=next_observation_n[i])
+        self._current_observation_n = next_observation_n
+        for i, rew in enumerate(reward_n):
+            self.episode_rewards[-1] += rew
+            self.agent_rewards[-1] += rew
+
+        if self.step % (25 * 1000) == 0:
+            print("steps: {}, episodes: {}, mean episode reward: {}".format(
+                        self.step, len(self.episode_rewards), np.mean(self.episode_rewards[-1000:])))
+        if np.all(done_n) or self._path_length >= self._max_path_length:
+            self._current_observation_n = self.env.reset()
+            self._max_path_return = np.maximum(self._max_path_return, self._path_return)
+            self._mean_path_return = self._path_return / self._path_length
+            self._last_path_return = self._path_return
+            self.episode_rewards.append(0)
+            # import pdb; pdb.set_trace()
+            self.agent_rewards.append(0)
+                # a.append(0)
+            self._path_length = 0
+
+            self._path_return = np.array([0.] * self.agent_num, dtype=np.float32)
+            self._n_episodes += 1
+            # self.log_diagnostics()
+            # logger.dump_tabular(with_prefix=False)
+            tflog('mean-return', self._mean_path_return[0])
+
+        else:
+            self._current_observation_n = next_observation_n
+
+    def terminate(self):
+        self.env.terminate()
+        return self._mean_path_return[0]
+        # return self._max_path_return[0]
+
+    # def log_diagnostics(self):
+    #     for i in range(self.agent_num):
+    #         logger.record_tabular('max-path-return_agent_{}'.format(i), self._max_path_return[i])
+    #         logger.record_tabular('mean-path-return_agent_{}'.format(i), self._mean_path_return[i])
+    #         logger.record_tabular('last-path-return_agent_{}'.format(i), self._last_path_return[i])
+    #     logger.record_tabular('episodes', self._n_episodes)
+    #     logger.record_tabular('episode_reward', self._n_episodes)
+    #     logger.record_tabular('total-samples', self._total_samples)

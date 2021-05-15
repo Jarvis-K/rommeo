@@ -1,0 +1,8 @@
+cmd: python experiment/res_rommeo.py
+hparams:
+  model_names_setting: [ROMMEO_ROMMEO_ROMMEO]
+  s2: [3]
+  max_steps: [5000]
+  lr: [0.1]
+  alpha: [0.6]
+  n_pars: [30, 30, 30] 

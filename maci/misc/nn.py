@@ -9,14 +9,15 @@ from maci.misc import tf_utils
 def feedforward_net(inputs,
                     layer_sizes,
                     activation_fn=tf.nn.relu,
-                    output_nonlinearity=None):
+                    output_nonlinearity=None, 
+                    name='weights'):
     def bias(n_units):
         return tf.get_variable(
             name='bias', shape=n_units, initializer=tf.zeros_initializer())
 
-    def linear(x, n_units, postfix=None):
+    def linear(x, n_units, postfix=None, name=name):
         input_size = x.shape[-1].value
-        weight_name = 'weight' + '_' + str(postfix) if postfix else 'weight'
+        weight_name = name + '_' + str(postfix) if postfix else 'weight'
         weight = tf.get_variable(
             name=weight_name,
             shape=(input_size, n_units),
@@ -34,7 +35,7 @@ def feedforward_net(inputs,
             if i == 0:
                 for j, input_tensor in enumerate(inputs):
                     # print(input_tensor.shape)
-                    tmp = linear(input_tensor, layer_size, j)
+                    tmp = linear(input_tensor, layer_size, j, name=name)
                     # print(tmp.shape)
                     out += tmp
             else:
@@ -73,7 +74,6 @@ class MLPFunction(Parameterized, Serializable):
 
     def _eval(self, inputs):
         feeds = {pl: val for pl, val in zip(self._inputs, inputs)}
-
         return tf_utils.get_default_session().run(self._output, feeds)
 
     def get_params_internal(self, scope='', **tags):

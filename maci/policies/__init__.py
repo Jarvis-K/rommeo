@@ -3,6 +3,6 @@ from .gmm import GMMPolicy
 from .latent_space_policy import LatentSpacePolicy
 from .uniform_policy import UniformPolicy
 from .gaussian_policy import GaussianPolicy
-from .stochastic_policy import StochasticNNPolicy, StochasticNNConditionalPolicy
+from .stochastic_policy import StochasticNNPolicy, StochasticNNConditionalPolicy, MarginalPolicy, ConditionedStochasticNNPolicy, JStochasticNNPolicy, SSConditionedStochasticNNPolicy, CConditionedStochasticNNPolicy, ACConditionedStochasticNNPolicy, ASSConditionedStochasticNNPolicy
 from .deterministic_policy import DeterministicNNPolicy
 

@@ -1,0 +1,8 @@
+cmd: python experiment/res_baselines.py
+hparams:
+  model_names_setting: [PR2AC0_PR2AC0_PR2AC0]
+  s2: [3]
+  max_steps: [5000]
+  lr: [0.1, 0.005]
+  alpha: [10, 5, 2, 0.1]
+  n_pars: [38, 38, 38] 
